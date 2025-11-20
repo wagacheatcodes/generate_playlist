@@ -51,7 +51,8 @@ def stealth_scrape(target_config):
 
         try:
             # Random micro-sleep to look human (0.2 to 0.5 seconds)
-            time.sleep(1.5)
+            # NEW (The "Safe Mode" speed)
+time.sleep(2.0)
             
             # Fast Timeout: If server lags > 5s, skip it.
             response = session.get(current_url, timeout=5)
