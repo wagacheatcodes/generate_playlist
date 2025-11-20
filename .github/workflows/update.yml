@@ -1,21 +1,18 @@
-name: Weekly Playlist Update
+name: Update Playlist
 
 on:
   schedule:
-    # Runs at 04:00 UTC every Sunday
-    - cron: '0 4 * * 0'
-  workflow_dispatch: # Allows you to click a button to run it manually
-
-permissions:
-  contents: write # Crucial: gives the robot permission to save the file
+    - cron: '0 0 * * 0' # Every Sunday
+  workflow_dispatch:    # Manual Button
 
 jobs:
-  build:
+  # ROBOT 1: Movies
+  scrape_movies:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 350 # Allow up to ~6 hours
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -23,15 +20,64 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4
 
-      - name: Run Scraper Script
-        run: |
-          python generate_playlist.py
+      - name: Run Movie Scraper
+        run: python generate_playlist.py --mode movies
 
-      - name: Commit and Push changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+      - name: Upload Movie Artifact
+        uses: actions/upload-artifact@v4
         with:
-          commit_message: "Auto-update playlist json"
-          file_pattern: '*.json'
+          name: movies-json
+          path: movies.json
+
+  # ROBOT 2: Series (Only /tvs/)
+  scrape_series:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run Series Scraper
+        run: python generate_playlist.py --mode series
+
+      - name: Upload Series Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: series-json
+          path: series.json
+
+  # MERGE: Combine results and save
+  commit_changes:
+    needs: [scrape_movies, scrape_series]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download Movies
+        uses: actions/download-artifact@v4
+        with:
+          name: movies-json
+
+      - name: Download Series
+        uses: actions/download-artifact@v4
+        with:
+          name: series-json
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add movies.json series.json
+          git commit -m "Weekly Playlist Update" || echo "No changes to commit"
+          git push
