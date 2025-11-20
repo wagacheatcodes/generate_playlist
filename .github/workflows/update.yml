@@ -88,11 +88,11 @@ jobs:
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
           
-          # Stage files
+          # Stage ALL files (movies, series, AND episodes)
           git add movies.json series.json episodes.json
           
           # Commit
           git commit -m "Weekly Playlist Update" || echo "No changes to commit"
           
-          # FORCE PUSH to overwrite errors
+          # FORCE PUSH (-f) to fix the rejection error
           git push -f origin main
