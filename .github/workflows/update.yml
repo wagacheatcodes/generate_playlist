@@ -2,14 +2,14 @@ name: Update Playlist
 
 on:
   schedule:
-    - cron: '0 0 * * 0' # Every Sunday
-  workflow_dispatch:    # Manual Button
+    - cron: '0 0 * * 0' # Runs every Sunday at midnight
+  workflow_dispatch: # Allows you to click "Run Now"
 
 jobs:
-  # ROBOT 1: Movies
+  # ROBOT 1: Scrape Movies
   scrape_movies:
     runs-on: ubuntu-latest
-    timeout-minutes: 350 # Allow up to ~6 hours
+    timeout-minutes: 355 # Kill it 5 mins before the hard limit to save data
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -25,16 +25,18 @@ jobs:
       - name: Run Movie Scraper
         run: python generate_playlist.py --mode movies
 
+      # SAFETY NET: Uploads the file even if the script times out or crashes
       - name: Upload Movie Artifact
+        if: always() 
         uses: actions/upload-artifact@v4
         with:
-          name: movies-json
+          name: movies-data
           path: movies.json
 
-  # ROBOT 2: Series (Only /tvs/)
+  # ROBOT 2: Scrape Series & Episodes
   scrape_series:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 355
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -50,34 +52,44 @@ jobs:
       - name: Run Series Scraper
         run: python generate_playlist.py --mode series
 
-      - name: Upload Series Artifact
+      # SAFETY NET: Uploads both files even if it times out
+      - name: Upload Series Artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: series-json
-          path: series.json
+          name: series-data
+          path: |
+            series.json
+            episodes.json
 
-  # MERGE: Combine results and save
+  # ROBOT 3: The Merger (Commits to Repo)
   commit_changes:
     needs: [scrape_movies, scrape_series]
+    if: always() # Runs even if the scrapers failed/timed out
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # Download Movies
       - name: Download Movies
         uses: actions/download-artifact@v4
         with:
-          name: movies-json
+          name: movies-data
+          path: .
 
+      # Download Series & Episodes
       - name: Download Series
         uses: actions/download-artifact@v4
         with:
-          name: series-json
+          name: series-data
+          path: .
 
+      # Save everything to GitHub
       - name: Commit and Push
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
-          git add movies.json series.json
+          git add movies.json series.json episodes.json
           git commit -m "Weekly Playlist Update" || echo "No changes to commit"
           git push
