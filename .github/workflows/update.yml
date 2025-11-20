@@ -103,6 +103,29 @@ commit_changes:
           name: series-data
           path: .
 
+    # ROBOT 3: The Merger (Commits to Repo)
+  commit_changes:
+    needs: [scrape_movies, scrape_series]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Required for force pushing
+
+      - name: Download Movies
+        uses: actions/download-artifact@v4
+        with:
+          name: movies-data
+          path: .
+
+      - name: Download Series
+        uses: actions/download-artifact@v4
+        with:
+          name: series-data
+          path: .
+
       - name: Commit and Force Push
         run: |
           git config --global user.name 'GitHub Action'
@@ -114,6 +137,5 @@ commit_changes:
           # Commit
           git commit -m "Weekly Playlist Update" || echo "No changes to commit"
           
-          # THE NUCLEAR OPTION: Force Push (-f)
-          # This overwrites the remote server with our new fresh list.
+          # THE FIX IS HERE: Force Push (-f)
           git push -f origin main
