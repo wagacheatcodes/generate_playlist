@@ -3,114 +3,118 @@ from bs4 import BeautifulSoup
 import json
 import urllib.parse
 import time
-import re
+import random
+import sys
 
 # --- CONFIGURATION ---
-MOVIES_URL = "https://a.111477.xyz/movies/"
-SERIES_URL = "https://a.111477.xyz/tvs/"
+# We strict scan ONLY these folders.
+TARGETS = [
+    {"type": "movies", "url": "https://a.111477.xyz/movies/", "output": "movies.json"},
+    {"type": "series", "url": "https://a.111477.xyz/tvs/",    "output": "series.json"}
+]
 
-OUTPUT_MOVIES = "movies.json"
-OUTPUT_SERIES = "series.json"
-MAX_SIZE_GB = 5.5
-
+# Headers to look like a real Chrome browser
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Connection": "keep-alive"
 }
 
-def get_size_gb(text_content):
-    """Finds a size pattern (e.g., 2.4 GB) in any text string."""
-    if not text_content: return 0
-    try:
-        text = text_content.upper().replace(",", "")
-        match = re.search(r"(\d+(\.\d+)?)\s*(G|M|K)B?", text)
-        if match:
-            val = float(match.group(1))
-            unit = match.group(3)
-            if unit == 'G': return val
-            if unit == 'M': return val / 1024
-            if unit == 'K': return val / 1024 / 1024
-    except:
-        pass
-    return 0
+# -------------------------------------------
 
-def scrape_folder(url, category_type, depth=0, max_depth=3):
-    items = []
+def stealth_scrape(target_config):
+    base_url = target_config["url"]
+    category = target_config["type"]
     
-    # Safety stop
-    if depth > max_depth: return []
-
-    print(f"Scanning ({category_type}): {url}")
+    print(f"🚀 STARTING TURBO SCAN: {category.upper()}")
     
-    try:
-        # Sleep to avoid 429 blocking
-        time.sleep(2)
-        
-        response = requests.get(url, headers=HEADERS, timeout=20)
-        
-        if response.status_code == 404:
-            print(f"   [404 Error] Path not found: {url}")
-            return []
-        if response.status_code == 429:
-            print(f"   [429 Error] Too fast! Sleeping 30s...")
-            time.sleep(30)
-            response = requests.get(url, headers=HEADERS, timeout=20)
+    # Use a Session for speed (reuses TCP connections)
+    session = requests.Session()
+    session.headers.update(HEADERS)
+    
+    found_items = []
+    folders_to_scan = [base_url]
+    scanned_history = set()
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        links = soup.find_all('a')
+    # Processing Loop
+    while len(folders_to_scan) > 0:
+        current_url = folders_to_scan.pop(0)
+        
+        # SAFETY: Skip if we've seen it or if it escaped the parent folder
+        if current_url in scanned_history: continue
+        if not current_url.startswith(base_url): 
+            # This is the "Jail" - prevents going to /asiandrama/
+            continue
 
-        for link in links:
-            href = link.get('href')
-            name = link.text.strip()
+        scanned_history.add(current_url)
+        print(f"Scanning: {current_url.replace(base_url, '')} ...", end='\r')
+
+        try:
+            # Random micro-sleep to look human (0.2 to 0.5 seconds)
+            time.sleep(random.uniform(0.2, 0.5))
             
-            if name in ["Parent Directory", "../", "Name", "Size", "Date", "Description"]:
+            # Fast Timeout: If server lags > 5s, skip it.
+            response = session.get(current_url, timeout=5)
+            
+            if response.status_code == 404: continue
+            if response.status_code == 429:
+                print(f"\n⚠️  429 Too Many Requests. Pausing 10s...")
+                time.sleep(10)
+                # Put it back in queue to try later
+                folders_to_scan.append(current_url) 
                 continue
-            if href.startswith("?"): continue
-            
-            full_url = urllib.parse.urljoin(url, href)
-            
-            # 1. CHECK FOR FOLDERS (Recursion for Series)
-            if href.endswith("/"):
-                if category_type == "series":
-                    # Recurse deeper for series
-                    sub_items = scrape_folder(full_url, category_type, depth + 1, max_depth)
-                    items.extend(sub_items)
-            
-            # 2. CHECK FOR VIDEO FILES
-            elif href.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v')):
-                # Try to find size in the row
-                row_text = str(link.parent) + str(link.find_next('td'))
-                size_gb = get_size_gb(row_text)
 
-                # Filter by size
-                if 0.05 < size_gb <= MAX_SIZE_GB:
-                    clean_name = urllib.parse.unquote(name).replace(".mp4","").replace(".mkv","")
+            soup = BeautifulSoup(response.text, 'html.parser')
+            links = soup.find_all('a')
+
+            for link in links:
+                href = link.get('href')
+                name = link.text.strip()
+                
+                if not href or name in ["Parent Directory", "../", "Name", "Size", "Date", "Description"]:
+                    continue
+                
+                full_url = urllib.parse.urljoin(current_url, href)
+
+                # 1. IS IT A FOLDER?
+                if href.endswith("/"):
+                    # STRICT CHECK: Only add if it is still inside our base URL
+                    if full_url.startswith(base_url) and full_url not in scanned_history:
+                        folders_to_scan.append(full_url)
+
+                # 2. IS IT A VIDEO? (Grab mp4/mkv/avi)
+                elif href.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v')):
+                    # Clean filename
+                    clean_name = urllib.parse.unquote(name)
+                    for ext in ['.mp4', '.mkv', '.avi', '.m4v']:
+                        clean_name = clean_name.replace(ext, "")
                     
-                    items.append({
+                    # Add to list (We assume 0 size to save time)
+                    found_items.append({
                         "name": clean_name,
                         "url": full_url,
-                        "image": "", 
-                        "category_id": "1" if category_type == "movies" else "2"
+                        "stream_icon": "", 
+                        "category_id": "1" if category == "movies" else "2",
+                        "size": 0 # Scraper is blind to size for speed
                     })
 
-    except Exception as e:
-        print(f"   [Error] {e}")
+        except Exception as e:
+            # If it fails, just print a dot and keep moving. Don't stop.
+            print(".", end="")
+            pass
 
-    return items
+    print(f"\n✅ Finished {category}. Found {len(found_items)} files.")
+    return found_items
 
-# --- EXECUTION ---
+# --- MAIN EXECUTION ---
 
-print("--- STARTING SCAN ---")
+if __name__ == "__main__":
+    for target in TARGETS:
+        data = stealth_scrape(target)
+        
+        # Save JSON
+        with open(target["output"], 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+            print(f"💾 Saved to {target['output']}\n")
 
-movies = scrape_folder(MOVIES_URL, "movies", max_depth=1)
-series = scrape_folder(SERIES_URL, "series", max_depth=3)
-
-print(f"\n--- RESULTS ---")
-print(f"Movies Found: {len(movies)}")
-print(f"Series Episodes Found: {len(series)}")
-
-with open(OUTPUT_MOVIES, 'w') as f:
-    json.dump(movies, f, indent=4)
-
-with open(OUTPUT_SERIES, 'w') as f:
-    json.dump(series, f, indent=4)
+    print("🎉 ALL SCANS COMPLETE.")
