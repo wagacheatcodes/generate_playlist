@@ -5,8 +5,8 @@ permissions:
 
 on:
   schedule:
-    - cron: '0 0 * * 0'
-  workflow_dispatch:
+    - cron: '0 0 * * 0' # Runs every Sunday
+  workflow_dispatch:    # Allows manual run
 
 jobs:
   scrape_movies:
@@ -68,51 +68,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Download Movies
-        uses: actions/download-artifact@v4
         with:
-          name: movies-data
-          path: .
-
-      - name: Download Series
-        uses: actions/download-artifact@v4
-        with:
-          name: series-data
-          path: .
-
-commit_changes:
-    needs: [scrape_movies, scrape_series]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0 # Fetch all history so force push works smoothly
-
-      - name: Download Movies
-        uses: actions/download-artifact@v4
-        with:
-          name: movies-data
-          path: .
-
-      - name: Download Series
-        uses: actions/download-artifact@v4
-        with:
-          name: series-data
-          path: .
-
-    # ROBOT 3: The Merger (Commits to Repo)
-  commit_changes:
-    needs: [scrape_movies, scrape_series]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0 # Required for force pushing
+          fetch-depth: 0 # Required for force push
 
       - name: Download Movies
         uses: actions/download-artifact@v4
@@ -137,5 +94,5 @@ commit_changes:
           # Commit
           git commit -m "Weekly Playlist Update" || echo "No changes to commit"
           
-          # THE FIX IS HERE: Force Push (-f)
+          # FORCE PUSH to overwrite errors
           git push -f origin main
