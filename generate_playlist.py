@@ -4,31 +4,28 @@ import json
 import urllib.parse
 import time
 import random
+import argparse
 import sys
 
 # --- CONFIGURATION ---
-# We strict scan ONLY these folders.
+# STRICT TARGETS: The script is allowed to look ONLY here.
 TARGETS = [
     {"type": "movies", "url": "https://a.111477.xyz/movies/", "output": "movies.json"},
-    {"type": "series", "url": "https://a.111477.xyz/tvs/",    "output": "series.json"}
+    {"type": "series", "url": "https://a.111477.xyz/tvs/",    "output": "series.json"} 
 ]
 
-# Headers to look like a real Chrome browser
+# Headers to mimic a real browser
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Connection": "keep-alive"
 }
-
-# -------------------------------------------
 
 def stealth_scrape(target_config):
     base_url = target_config["url"]
     category = target_config["type"]
     
-    print(f"🚀 STARTING TURBO SCAN: {category.upper()}")
+    print(f"🚀 STARTING SCAN: {category.upper()} ({base_url})")
     
-    # Use a Session for speed (reuses TCP connections)
     session = requests.Session()
     session.headers.update(HEADERS)
     
@@ -36,34 +33,40 @@ def stealth_scrape(target_config):
     folders_to_scan = [base_url]
     scanned_history = set()
 
-    # Processing Loop
     while len(folders_to_scan) > 0:
         current_url = folders_to_scan.pop(0)
         
-        # SAFETY: Skip if we've seen it or if it escaped the parent folder
+        # --- THE JAIL ---
+        # 1. Check history
         if current_url in scanned_history: continue
+        
+        # 2. STRICT LOCK: If URL does not start with the base (e.g. /tvs/), KILL IT.
+        # This prevents wandering into /asiandrama/
         if not current_url.startswith(base_url): 
-            # This is the "Jail" - prevents going to /asiandrama/
             continue
 
         scanned_history.add(current_url)
-        print(f"Scanning: {current_url.replace(base_url, '')} ...", flush=True)
+        
+        # Print progress (flush=True forces it to show in GitHub logs instantly)
+        display_url = current_url.replace(base_url, '')
+        if not display_url: display_url = "ROOT"
+        print(f"Scanning: {display_url} ...", flush=True)
 
         try:
-            # Random micro-sleep to look human (0.2 to 0.5 seconds)
-            # NEW (The "Safe Mode" speed)
-time.sleep(2.0)
+            # --- SAFE SPEED ---
+            # 1.5 seconds is the "Sweet Spot". 
+            # Fast enough to finish, slow enough to avoid 429 errors.
+            time.sleep(1.5)
             
-            # Fast Timeout: If server lags > 5s, skip it.
-            response = session.get(current_url, timeout=5)
+            response = session.get(current_url, timeout=10)
             
-            if response.status_code == 404: continue
             if response.status_code == 429:
-                print(f"\n⚠️  429 Too Many Requests. Pausing 10s...")
+                print(f"⚠️  429 Too Many Requests. Sleeping 10s...", flush=True)
                 time.sleep(10)
-                # Put it back in queue to try later
-                folders_to_scan.append(current_url) 
+                folders_to_scan.insert(0, current_url) # Retry
                 continue
+            
+            if response.status_code != 200: continue
 
             soup = BeautifulSoup(response.text, 'html.parser')
             links = soup.find_all('a')
@@ -77,31 +80,28 @@ time.sleep(2.0)
                 
                 full_url = urllib.parse.urljoin(current_url, href)
 
-                # 1. IS IT A FOLDER?
+                # 1. FOLDERS
                 if href.endswith("/"):
-                    # STRICT CHECK: Only add if it is still inside our base URL
+                    # Only add if it stays inside the Jail
                     if full_url.startswith(base_url) and full_url not in scanned_history:
                         folders_to_scan.append(full_url)
 
-                # 2. IS IT A VIDEO? (Grab mp4/mkv/avi)
+                # 2. VIDEO FILES (Blind Grab - Faster)
                 elif href.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v')):
-                    # Clean filename
                     clean_name = urllib.parse.unquote(name)
+                    # Remove extensions for cleaner UI
                     for ext in ['.mp4', '.mkv', '.avi', '.m4v']:
                         clean_name = clean_name.replace(ext, "")
                     
-                    # Add to list (We assume 0 size to save time)
                     found_items.append({
                         "name": clean_name,
                         "url": full_url,
                         "stream_icon": "", 
                         "category_id": "1" if category == "movies" else "2",
-                        "size": 0 # Scraper is blind to size for speed
+                        "size": 0 
                     })
 
         except Exception as e:
-            # If it fails, just print a dot and keep moving. Don't stop.
-            print(".", end="")
             pass
 
     print(f"\n✅ Finished {category}. Found {len(found_items)} files.")
@@ -110,12 +110,19 @@ time.sleep(2.0)
 # --- MAIN EXECUTION ---
 
 if __name__ == "__main__":
-    for target in TARGETS:
-        data = stealth_scrape(target)
-        
-        # Save JSON
-        with open(target["output"], 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4)
-            print(f"💾 Saved to {target['output']}\n")
+    # Parse arguments to know which robot we are
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--mode', choices=['movies', 'series', 'all'], default='all')
+    args = parser.parse_args()
 
-    print("🎉 ALL SCANS COMPLETE.")
+    # Robot 1: Movies
+    if args.mode in ['movies', 'all']:
+        data = stealth_scrape(TARGETS[0]) 
+        with open(TARGETS[0]["output"], 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+
+    # Robot 2: Series (Strictly /tvs/)
+    if args.mode in ['series', 'all']:
+        data = stealth_scrape(TARGETS[1])
+        with open(TARGETS[1]["output"], 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
