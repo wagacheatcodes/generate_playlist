@@ -32,11 +32,9 @@ HEADERS = {
 # --- HELPER: FUZZY MATCHER ---
 def normalize_string(s):
     """
-    Turns 'Alita - Battle Angel (2019)' into 'alitabattleangel2019'.
-    This allows us to catch duplicates even if punctuation differs.
+    Turns 'Game of Thrones (2011)' into 'gameofthrones2011'.
     """
     if not s: return ""
-    # Keep only letters and numbers, lowercase everything
     return "".join(c.lower() for c in s if c.isalnum())
 
 def normalize_item(item, cat_type):
@@ -95,18 +93,15 @@ def load_or_fetch_data(filename, external_url, cat_type):
     return data
 
 def get_memory_banks(data):
-    """Creates sets of known folders and known NAMES to prevent duplicates."""
     known_folders = set()
-    known_names = set() # New "Fuzzy" Memory
+    known_names = set() 
     
     for item in data:
-        # 1. Remember exact folder URL
         f_url = item.get('folder_url')
         if f_url:
             try: known_folders.add(urllib.parse.unquote(f_url))
             except: known_folders.add(f_url)
             
-        # 2. Remember fuzzy name (e.g. "alitabattleangel2019")
         name = item.get('name')
         if name:
             known_names.add(normalize_string(name))
@@ -123,8 +118,11 @@ def clean_filename(name):
     return urllib.parse.unquote(name).strip()
 
 def generate_series_id(name):
+    # FUZZY ID GENERATION
+    # This ensures "Game of Thrones" and "Game - of - Thrones" create the SAME ID.
+    clean_name = normalize_string(name)
     hash_val = 0
-    for char in name:
+    for char in clean_name:
         hash_val = (hash_val * 31 + ord(char)) & 0xFFFFFFFF
     return abs(hash_val) % 1000000
 
@@ -152,7 +150,6 @@ def stealth_scrape(target_config, episodes_file=None):
     if category == "series" and episodes_file:
         episodes_list = load_or_fetch_data(episodes_file, TARGETS[2]["source"], "episodes")
     
-    # Build Memory Banks
     known_folders, known_names = get_memory_banks(master_list)
     print(f"🧠 Memory: {len(known_folders)} folders, {len(known_names)} unique names.")
 
@@ -169,21 +166,19 @@ def stealth_scrape(target_config, episodes_file=None):
         if current_url in scanned_history: continue
         if not current_url.startswith(base_url): continue
 
-        # --- INTELLIGENT SKIP LOGIC ---
         decoded_current = urllib.parse.unquote(current_url)
         
         # 1. Check Exact URL
         if decoded_current in known_folders:
              continue
 
-        # 2. Check Fuzzy Name (Only if it's a sub-folder, not the root)
-        # Extract the folder name (e.g. "Alita - Battle Angel (2019)")
+        # 2. Check Fuzzy Name
+        # This now works for BOTH Movies and Series
         folder_name = decoded_current.rstrip('/').split('/')[-1]
         if folder_name and folder_name != "movies" and folder_name != "tvs":
             norm_name = normalize_string(folder_name)
-            # If this name exists in our fuzzy memory, SKIP IT!
-            if category == "movies" and norm_name in known_names:
-                # print(f"⏩ Fuzzy Skip: {folder_name} matches known item.")
+            if norm_name in known_names:
+                # print(f"⏩ Fuzzy Skip: {folder_name}")
                 continue
 
         scanned_history.add(current_url)
@@ -222,7 +217,7 @@ def stealth_scrape(target_config, episodes_file=None):
                 elif href.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v')):
                     folder_files.append({"name": name, "url": full_url})
 
-            # --- PROCESS FOUND ITEMS ---
+            # --- PROCESS ---
             
             if category == "movies" and folder_files:
                 valid_files = [f for f in folder_files if "sample" not in f['name'].lower()]
@@ -247,7 +242,6 @@ def stealth_scrape(target_config, episodes_file=None):
                 }
                 master_list.append(new_item)
                 
-                # Update Memory Instantly
                 known_folders.add(decoded_current)
                 known_names.add(normalize_string(final_name))
                 items_since_save += 1
@@ -257,6 +251,7 @@ def stealth_scrape(target_config, episodes_file=None):
                 if "Season" in series_name:
                      series_name = urllib.parse.unquote(current_url.rstrip('/').split('/')[-2])
 
+                # USE FUZZY GENERATOR
                 s_id = generate_series_id(series_name)
                 
                 # Check if series exists
@@ -274,7 +269,6 @@ def stealth_scrape(target_config, episodes_file=None):
                     }
                     master_list.append(new_series)
                 
-                # Add Episodes
                 for f in folder_files:
                      ep_name = clean_filename(f['name'])
                      season_num = "1"
@@ -282,7 +276,6 @@ def stealth_scrape(target_config, episodes_file=None):
                          try: season_num = current_url.split("Season")[1].split("/")[0].strip()
                          except: pass
                      
-                     # Check if episode URL is already known (deduplication)
                      if any(e['url'] == f['url'] for e in episodes_list): continue
 
                      new_ep = {
@@ -295,6 +288,7 @@ def stealth_scrape(target_config, episodes_file=None):
                      episodes_list.append(new_ep)
 
                 known_folders.add(decoded_current)
+                known_names.add(normalize_string(series_name))
                 items_since_save += 1
 
             if items_since_save >= 50:
