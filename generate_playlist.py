@@ -9,15 +9,12 @@ import os
 
 # --- CONFIGURATION ---
 TARGETS = [
-    # MOVIES (Files + Metadata in one)
     {"type": "movies", "url": "https://a.111477.xyz/movies/", "output": "movies.json", 
      "source": "https://raw.githubusercontent.com/dtankdempsey2/xc-vod-playlist/refs/heads/main/dist/movies.json"},
     
-    # SERIES (Metadata Only)
     {"type": "series", "url": "https://a.111477.xyz/tvs/",    "output": "series.json",
      "source": "https://raw.githubusercontent.com/dtankdempsey2/xc-vod-playlist/refs/heads/main/dist/series.json"},
 
-    # EPISODES (Files Only) - NEW!
     {"type": "episodes", "url": "https://a.111477.xyz/tvs/", "output": "episodes.json",
      "source": "https://raw.githubusercontent.com/dtankdempsey2/xc-vod-playlist/refs/heads/main/dist/episodes.json"}
 ]
@@ -32,19 +29,24 @@ HEADERS = {
     "Connection": "keep-alive"
 }
 
+# --- HELPER: FUZZY MATCHER ---
+def normalize_string(s):
+    """
+    Turns 'Alita - Battle Angel (2019)' into 'alitabattleangel2019'.
+    This allows us to catch duplicates even if punctuation differs.
+    """
+    if not s: return ""
+    # Keep only letters and numbers, lowercase everything
+    return "".join(c.lower() for c in s if c.isalnum())
+
 def normalize_item(item, cat_type):
-    """Ensures data consistency."""
-    # Normalize Folder URL
     folder_url = item.get('folder_url')
     direct_url = item.get('url') or item.get('direct_source')
 
     if not folder_url and direct_url:
         folder_url = direct_url.rsplit('/', 1)[0] + '/'
     
-    # For Episodes, we just need the raw data mostly
-    if cat_type == "episodes":
-        return item # Trust external episode format for now
-
+    if cat_type == "episodes": return item 
     if not folder_url: return None
 
     return {
@@ -58,7 +60,6 @@ def normalize_item(item, cat_type):
         "category_id": item.get('category_id') or ("1" if cat_type == "movies" else "2"),
         "folder_url": folder_url,
         "url": direct_url or "",
-        # Keep extra fields for Series Metadata
         "plot": item.get('plot') or "",
         "cast": item.get('cast') or "",
         "genre": item.get('genre') or "",
@@ -67,7 +68,6 @@ def normalize_item(item, cat_type):
 
 def load_or_fetch_data(filename, external_url, cat_type):
     data = []
-    # 1. Load Local
     if os.path.exists(filename):
         try:
             with open(filename, 'r', encoding='utf-8') as f:
@@ -75,18 +75,16 @@ def load_or_fetch_data(filename, external_url, cat_type):
             print(f"📂 Loaded {len(data)} local items from {filename}")
         except: pass
 
-    # 2. Seed External
     if not data and external_url:
         print(f"🌍 Seeding {filename} from external source...")
         try:
             res = requests.get(external_url, timeout=60)
             if res.status_code == 200:
                 raw_data = res.json()
-                # Only normalize if it's not episodes (keep episodes raw for compatibility)
                 if cat_type != "episodes":
                     data = [normalize_item(x, cat_type) for x in raw_data if normalize_item(x, cat_type)]
                 else:
-                    data = raw_data # Keep episodes as-is
+                    data = raw_data 
                 
                 with open(filename, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4)
@@ -96,22 +94,39 @@ def load_or_fetch_data(filename, external_url, cat_type):
 
     return data
 
-def get_known_folders(data):
-    known = set()
+def get_memory_banks(data):
+    """Creates sets of known folders and known NAMES to prevent duplicates."""
+    known_folders = set()
+    known_names = set() # New "Fuzzy" Memory
+    
     for item in data:
+        # 1. Remember exact folder URL
         f_url = item.get('folder_url')
         if f_url:
-            # Normalize to handle encoding differences
-            try:
-                decoded = urllib.parse.unquote(f_url)
-                known.add(decoded)
-            except:
-                known.add(f_url)
-    return known
+            try: known_folders.add(urllib.parse.unquote(f_url))
+            except: known_folders.add(f_url)
+            
+        # 2. Remember fuzzy name (e.g. "alitabattleangel2019")
+        name = item.get('name')
+        if name:
+            known_names.add(normalize_string(name))
+            
+    return known_folders, known_names
 
 def save_data(filename, data):
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
+
+def clean_filename(name):
+    for ext in ['.mp4', '.mkv', '.avi', '.m4v']:
+        name = name.replace(ext, "")
+    return urllib.parse.unquote(name).strip()
+
+def generate_series_id(name):
+    hash_val = 0
+    for char in name:
+        hash_val = (hash_val * 31 + ord(char)) & 0xFFFFFFFF
+    return abs(hash_val) % 1000000
 
 def update_categories():
     for cat in CATEGORIES:
@@ -123,18 +138,6 @@ def update_categories():
                         f.write(res.text)
             except: pass
 
-def clean_filename(name):
-    for ext in ['.mp4', '.mkv', '.avi', '.m4v']:
-        name = name.replace(ext, "")
-    return urllib.parse.unquote(name).strip()
-
-def generate_series_id(name):
-    # Generate a consistent numeric ID from the Series Name string
-    hash_val = 0
-    for char in name:
-        hash_val = (hash_val * 31 + ord(char)) & 0xFFFFFFFF
-    return abs(hash_val) % 1000000
-
 def stealth_scrape(target_config, episodes_file=None):
     base_url = target_config["url"]
     category = target_config["type"]
@@ -143,17 +146,15 @@ def stealth_scrape(target_config, episodes_file=None):
     
     print(f"🚀 STARTING SCAN: {category.upper()}")
     
-    # Load Data
     master_list = load_or_fetch_data(output_file, seed_url, category)
     
-    # Load Episodes if we are scanning Series
     episodes_list = []
     if category == "series" and episodes_file:
         episodes_list = load_or_fetch_data(episodes_file, TARGETS[2]["source"], "episodes")
     
-    # Build Memory (Folders to Skip)
-    known_folders = get_known_folders(master_list)
-    print(f"🧠 Memory: {len(known_folders)} known folders skipped.")
+    # Build Memory Banks
+    known_folders, known_names = get_memory_banks(master_list)
+    print(f"🧠 Memory: {len(known_folders)} folders, {len(known_names)} unique names.")
 
     session = requests.Session()
     session.headers.update(HEADERS)
@@ -168,13 +169,22 @@ def stealth_scrape(target_config, episodes_file=None):
         if current_url in scanned_history: continue
         if not current_url.startswith(base_url): continue
 
+        # --- INTELLIGENT SKIP LOGIC ---
         decoded_current = urllib.parse.unquote(current_url)
-
-        # --- SKIP LOGIC (APPLIES TO BOTH NOW) ---
-        # If we already have this folder in our database, SKIP IT.
+        
+        # 1. Check Exact URL
         if decoded_current in known_folders:
-             # print(f"⏩ Skipping known: {decoded_current}")
              continue
+
+        # 2. Check Fuzzy Name (Only if it's a sub-folder, not the root)
+        # Extract the folder name (e.g. "Alita - Battle Angel (2019)")
+        folder_name = decoded_current.rstrip('/').split('/')[-1]
+        if folder_name and folder_name != "movies" and folder_name != "tvs":
+            norm_name = normalize_string(folder_name)
+            # If this name exists in our fuzzy memory, SKIP IT!
+            if category == "movies" and norm_name in known_names:
+                # print(f"⏩ Fuzzy Skip: {folder_name} matches known item.")
+                continue
 
         scanned_history.add(current_url)
         
@@ -214,7 +224,6 @@ def stealth_scrape(target_config, episodes_file=None):
 
             # --- PROCESS FOUND ITEMS ---
             
-            # MOVIES: Pick One Best
             if category == "movies" and folder_files:
                 valid_files = [f for f in folder_files if "sample" not in f['name'].lower()]
                 if not valid_files: valid_files = folder_files
@@ -229,6 +238,7 @@ def stealth_scrape(target_config, episodes_file=None):
                     "stream_type": "movie",
                     "stream_id": int(time.time()) + len(master_list),
                     "stream_icon": "", 
+                    "rating": "0",
                     "added": int(time.time()),
                     "category_id": "1",
                     "container_extension": "mp4",
@@ -236,20 +246,20 @@ def stealth_scrape(target_config, episodes_file=None):
                     "url": best_file['url']
                 }
                 master_list.append(new_item)
-                known_folders.add(decoded_current) # Add to skip list
+                
+                # Update Memory Instantly
+                known_folders.add(decoded_current)
+                known_names.add(normalize_string(final_name))
                 items_since_save += 1
 
-            # SERIES: Add Series Metadata AND Episode Files
             elif category == "series" and folder_files:
-                # 1. Add Series Metadata (to series.json)
-                # Assuming folder name is Series Name (simplified)
                 series_name = urllib.parse.unquote(current_url.rstrip('/').split('/')[-1])
-                if "Season" in series_name: # Go up one level if in Season folder
+                if "Season" in series_name:
                      series_name = urllib.parse.unquote(current_url.rstrip('/').split('/')[-2])
 
                 s_id = generate_series_id(series_name)
                 
-                # Check if series exists (it shouldn't if we are here, but double check)
+                # Check if series exists
                 series_exists = any(str(s['series_id']) == str(s_id) for s in master_list)
                 
                 if not series_exists:
@@ -257,27 +267,29 @@ def stealth_scrape(target_config, episodes_file=None):
                     new_series = {
                         "series_id": s_id,
                         "name": series_name,
-                        "folder_url": current_url, # Base folder
+                        "folder_url": current_url,
                         "category_id": "2",
                         "stream_icon": "",
                         "added": int(time.time())
                     }
                     master_list.append(new_series)
                 
-                # 2. Add Episodes (to episodes.json)
+                # Add Episodes
                 for f in folder_files:
                      ep_name = clean_filename(f['name'])
-                     # Simple Season/Ep parsing
                      season_num = "1"
                      if "Season" in current_url:
                          try: season_num = current_url.split("Season")[1].split("/")[0].strip()
                          except: pass
                      
+                     # Check if episode URL is already known (deduplication)
+                     if any(e['url'] == f['url'] for e in episodes_list): continue
+
                      new_ep = {
                          "id": f"{s_id}_{len(episodes_list)+1}",
-                         "tmdb_id": s_id, # Link to Series ID
+                         "tmdb_id": s_id,
                          "season": f"Season {season_num}",
-                         "episodes": [ep_name], # Simplified structure
+                         "episodes": [ep_name],
                          "url": f['url']
                      }
                      episodes_list.append(new_ep)
@@ -311,5 +323,4 @@ if __name__ == "__main__":
         stealth_scrape(TARGETS[0]) 
 
     if args.mode in ['series', 'all']:
-        # For series, we also need to handle episodes.json
         stealth_scrape(TARGETS[1], episodes_file=TARGETS[2]["output"])
