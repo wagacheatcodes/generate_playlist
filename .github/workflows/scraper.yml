@@ -1,0 +1,75 @@
+name: Scraper
+
+# 1. PERMISSIONS (CRITICAL)
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  # JOB 1: MOVIES
+  scrape_movies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - run: pip install requests beautifulsoup4
+      - run: python generate_playlist.py --mode movies
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: movies-data
+          path: movies.json
+
+  # JOB 2: SERIES
+  scrape_series:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - run: pip install requests beautifulsoup4
+      - run: python generate_playlist.py --mode series
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: series-data
+          path: |
+            series.json
+            episodes.json
+
+  # JOB 3: FORCE PUSH (THE FIX)
+  force_push:
+    needs: [scrape_movies, scrape_series]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 
+      
+      - uses: actions/download-artifact@v4
+        with:
+          name: movies-data
+          path: .
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: series-data
+          path: .
+
+      - name: Nuclear Push
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add movies.json series.json episodes.json
+          git commit -m "Fresh Playlist" || echo "Nothing to commit"
+          git push -f origin main
