@@ -6,7 +6,6 @@ import time
 import argparse
 import sys
 import os
-import re
 
 # --- CONFIGURATION ---
 TARGETS = [
@@ -29,9 +28,20 @@ HEADERS = {
 
 # --- DATA NORMALIZER ---
 def normalize_item(item, category_id_default):
-    url = item.get('url') or item.get('direct_source') or ""
-    if not url: return None
+    # CRITICAL FIX: Prioritize 'folder_url' because that is what the external JSON uses
+    # If we have a direct file 'url', we calculate the folder from it.
+    folder_url = item.get('folder_url')
+    direct_url = item.get('url') or item.get('direct_source')
+
+    # If we only have a file link, make a folder link out of it
+    if not folder_url and direct_url:
+        folder_url = direct_url.rsplit('/', 1)[0] + '/'
+    
+    # If we have neither, skip
+    if not folder_url: return None
+
     name = item.get('name') or "Unknown"
+    
     return {
         "num": item.get('num'),
         "name": name,
@@ -41,8 +51,9 @@ def normalize_item(item, category_id_default):
         "rating": item.get('rating') or "0",
         "added": item.get('added') or int(time.time()),
         "category_id": item.get('category_id') or category_id_default,
-        "container_extension": "mp4",
-        "url": url
+        "folder_url": folder_url,  # <--- UNIFIED KEY
+        # We store the direct URL if we have it, but folder_url is the master key
+        "url": direct_url or "" 
     }
 
 def load_or_fetch_data(filename, external_url, category_type):
@@ -61,6 +72,7 @@ def load_or_fetch_data(filename, external_url, category_type):
             if res.status_code == 200:
                 raw_data = res.json()
                 cat_default = "1" if category_type == "movies" else "2"
+                # Normalize incoming data to ensure it has folder_url
                 data = [normalize_item(x, cat_default) for x in raw_data if normalize_item(x, cat_default)]
                 with open(filename, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=4)
@@ -68,22 +80,20 @@ def load_or_fetch_data(filename, external_url, category_type):
         except Exception as e:
             print(f"⚠️ Seed error: {e}")
 
+    # Build Memory Bank based on FOLDERS
     known_folders = set()
-    # Use a dict to track known movies by NAME to prevent duplicates
-    known_names = set() 
     
     for item in data:
-        if not item or 'url' not in item: continue
-        u = item['url']
-        if "111477.xyz" in u:
-            folder = u.rsplit('/', 1)[0] + '/'
-            known_folders.add(folder)
-        
-        # Clean name for deduplication
-        clean_n = item['name'].lower().strip()
-        known_names.add(clean_n)
+        f_url = item.get('folder_url')
+        if f_url:
+            # Normalize: ensure trailing slash and decoded characters match
+            try:
+                decoded_url = urllib.parse.unquote(f_url)
+                known_folders.add(decoded_url)
+            except:
+                known_folders.add(f_url)
                 
-    return data, known_names, known_folders
+    return data, known_folders
 
 def update_categories():
     for cat in CATEGORIES:
@@ -100,11 +110,8 @@ def save_data(filename, data):
         json.dump(data, f, indent=4)
 
 def clean_filename(name):
-    # Remove extensions
     for ext in ['.mp4', '.mkv', '.avi', '.m4v']:
         name = name.replace(ext, "")
-    # Remove common junk (optional, but keeps list clean)
-    # name = re.sub(r'\d{4}.*', '', name) # Remove year and everything after? (Risky)
     return urllib.parse.unquote(name).strip()
 
 def stealth_scrape(target_config):
@@ -115,7 +122,7 @@ def stealth_scrape(target_config):
     
     print(f"🚀 STARTING SCAN: {category.upper()}")
     
-    master_list, known_names, known_folders = load_or_fetch_data(output_file, seed_url, category)
+    master_list, known_folders = load_or_fetch_data(output_file, seed_url, category)
     
     session = requests.Session()
     session.headers.update(HEADERS)
@@ -130,9 +137,15 @@ def stealth_scrape(target_config):
         if current_url in scanned_history: continue
         if not current_url.startswith(base_url): continue
 
-        # SKIP KNOWN FOLDERS
-        if category == "movies" and current_url in known_folders:
-            continue
+        # Decode URL for comparison (handling %20 vs space)
+        decoded_current = urllib.parse.unquote(current_url)
+
+        # SKIP CHECK: Do we already have this folder?
+        if category == "movies":
+            # Check both raw and decoded versions to be safe
+            if current_url in known_folders or decoded_current in known_folders:
+                # print(f"⏩ Skipping known: {decoded_current}")
+                continue
 
         scanned_history.add(current_url)
         
@@ -154,7 +167,6 @@ def stealth_scrape(target_config):
             soup = BeautifulSoup(response.text, 'html.parser')
             links = soup.find_all('a')
             
-            # Temp list to hold files found in THIS folder
             folder_files = []
 
             for link in links:
@@ -171,28 +183,14 @@ def stealth_scrape(target_config):
                 elif href.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v')):
                     folder_files.append({"name": name, "url": full_url})
 
-            # --- HIGHLANDER LOGIC: THERE CAN BE ONLY ONE ---
+            # --- ADD NEW ITEMS ---
             if category == "movies" and folder_files:
-                # If we found files, pick the BEST one.
-                # Heuristic: Prefer 1080p > 720p. Prefer x264 > x265 (compatibility).
-                # Simple fallback: Pick the first one (usually main movie).
-                
-                # Filter out samples
+                # Filter samples
                 valid_files = [f for f in folder_files if "sample" not in f['name'].lower()]
-                if not valid_files: valid_files = folder_files # Fallback
-                
-                # Pick ONE
+                if not valid_files: valid_files = folder_files
                 best_file = valid_files[0]
                 
-                # Check if we already have this movie by NAME in our database
-                # This prevents adding "Avatar (2009)" if "Avatar.2009.1080p.mp4" exists
-                # Note: This relies on the folder name usually being the movie name.
-                
-                # For now, just add the SINGLE best file from this folder.
-                # Since each folder represents ONE movie usually.
-                
                 final_name = clean_filename(best_file['name'])
-                
                 print(f"✨ NEW: {final_name}", flush=True)
 
                 new_item = {
@@ -205,15 +203,24 @@ def stealth_scrape(target_config):
                     "added": int(time.time()),
                     "category_id": "1",
                     "container_extension": "mp4",
+                    "folder_url": current_url, # SAVE THE FOLDER!
                     "url": best_file['url']
                 }
                 master_list.append(new_item)
+                # Add to known folders instantly so we don't re-add if loop circles back
+                known_folders.add(urllib.parse.unquote(current_url)) 
                 items_since_save += 1
 
-            # For Series, we usually WANT all episodes, so we don't filter unique there.
             elif category == "series":
                 for f in folder_files:
+                     # For series, we check if file URL exists in the list manually 
+                     # (Logic simplified here: just append, assuming Series scraper logic handles deep folders)
                      final_name = clean_filename(f['name'])
+                     
+                     # Check duplicates
+                     is_duplicate = any(x.get('url') == f['url'] for x in master_list)
+                     if is_duplicate: continue
+
                      new_item = {
                         "num": len(master_list) + 1,
                         "name": final_name,
@@ -224,6 +231,7 @@ def stealth_scrape(target_config):
                         "added": int(time.time()),
                         "category_id": "2",
                         "container_extension": "mp4",
+                        "folder_url": current_url,
                         "url": f['url']
                     }
                      master_list.append(new_item)
