@@ -1,0 +1,37 @@
+name: Weekly Playlist Update
+
+on:
+  schedule:
+    # Runs at 04:00 UTC every Sunday
+    - cron: '0 4 * * 0'
+  workflow_dispatch: # Allows you to click a button to run it manually
+
+permissions:
+  contents: write # Crucial: gives the robot permission to save the file
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run Scraper Script
+        run: |
+          python generate_playlist.py
+
+      - name: Commit and Push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update playlist json"
+          file_pattern: '*.json'
