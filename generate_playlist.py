@@ -47,7 +47,7 @@ def stealth_scrape(target_config):
             continue
 
         scanned_history.add(current_url)
-        print(f"Scanning: {current_url.replace(base_url, '')} ...", end='\r')
+        print(f"Scanning: {current_url.replace(base_url, '')} ...", flush=True)
 
         try:
             # Random micro-sleep to look human (0.2 to 0.5 seconds)
