@@ -2,134 +2,106 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import urllib.parse
+import time
+import re
 
 # --- CONFIGURATION ---
-BASE_URL = "https://a.111477.xyz" # No trailing slash
-MOVIES_PATHS = ["/Movies", "/movies", "/Movie", "/movie"] # Will try all these variations
-SERIES_PATHS = ["/Series", "/series", "/TV", "/tv"]
+# Exact paths you found
+MOVIES_URL = "https://a.111477.xyz/movies/"
+SERIES_URL = "https://a.111477.xyz/tvs/"
+
 OUTPUT_MOVIES = "movies.json"
 OUTPUT_SERIES = "series.json"
+MAX_SIZE_GB = 5.5
 
-# Headers to look like a real browser (Bypasses basic blocking)
+# Mimic a real browser to avoid blocking
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.8",
-    "Referer": BASE_URL
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
 }
 
-def get_alist_files(path):
-    """
-    Attempts to fetch files using the 'Alist' API (common for these sites).
-    """
-    api_url = f"{BASE_URL}/api/fs/list"
-    payload = {
-        "path": path,
-        "password": "",
-        "page": 1,
-        "per_page": 0,
-        "refresh": False
-    }
+def get_size_gb(text_content):
+    """Finds a size pattern (e.g., 2.4 GB) in any text string."""
+    if not text_content: return 0
     try:
-        print(f"   [API Check] Trying Alist API for {path}...")
-        r = requests.post(api_url, json=payload, headers=HEADERS, timeout=10)
-        if r.status_code == 200:
-            data = r.json()
-            if data.get('code') == 200:
-                print("   [SUCCESS] Detected Alist API!")
-                return data['data']['content'] # Returns list of file objects
+        # Look for patterns like "2.4 GB", "500M", "1.2G"
+        text = text_content.upper().replace(",", "")
+        match = re.search(r"(\d+(\.\d+)?)\s*(G|M|K)B?", text)
+        if match:
+            val = float(match.group(1))
+            unit = match.group(3)
+            if unit == 'G': return val
+            if unit == 'M': return val / 1024
+            if unit == 'K': return val / 1024 / 1024
     except:
         pass
-    return None
+    return 0
 
-def scan_path(category_name, paths_to_try):
+def scrape_folder(url, category_type, depth=0, max_depth=3):
     items = []
-    found_files = False
+    
+    # Safety stop for recursion
+    if depth > max_depth: return []
 
-    for path in paths_to_try:
-        if found_files: break
+    print(f"Scanning ({category_type}): {url}")
+    
+    try:
+        # SLEEP to prevent 429 Errors (Crucial!)
+        time.sleep(2) 
         
-        full_url = BASE_URL + path
-        print(f"\n--- Scanning {category_name}: {path} ---")
+        response = requests.get(url, headers=HEADERS, timeout=20)
         
-        # METHOD 1: Try Alist API (Most likely for this site)
-        api_files = get_alist_files(path)
-        if api_files:
-            found_files = True
-            for f in api_files:
-                if f['is_dir']:
-                    # If it's a series folder, we might need recursion (skipped for simplicity here)
-                    continue 
-                
-                # Check extensions
-                name = f['name']
-                if name.lower().endswith(('.mp4', '.mkv', '.avi')):
-                    # Alist usually gives direct links or proxy links
-                    # We construct the raw link
-                    raw_url = f"{BASE_URL}/d{path}/{name}"
-                    # Or sometimes: f['sign'] might be needed. 
-                    # For public Alist, /d/path/file usually works.
+        if response.status_code == 404:
+            print(f"   [404 Error] Path not found: {url}")
+            return []
+        if response.status_code == 429:
+            print(f"   [429 Error] Too fast! Sleeping 30s...")
+            time.sleep(30)
+            # Retry once
+            response = requests.get(url, headers=HEADERS, timeout=20)
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = soup.find_all('a')
+
+        for link in links:
+            href = link.get('href')
+            name = link.text.strip()
+            
+            # Skip "Parent Directory" or sorting links
+            if name in ["Parent Directory", "../", "Name", "Size", "Date", "Description"]:
+                continue
+            if href.startswith("?"): continue
+            
+            # Build Full URL
+            full_url = urllib.parse.urljoin(url, href)
+            
+            # 1. CHECK FOR FOLDERS (Recursion for Series)
+            if href.endswith("/"):
+                # Only recurse if it's the "tvs" category
+                if category_type == "series":
+                    print(f"   -> Entering Folder: {name}")
+                    sub_items = scrape_folder(full_url, category_type, depth + 1, max_depth)
+                    items.extend(sub_items)
+            
+            # 2. CHECK FOR VIDEO FILES
+            elif href.lower().endswith(('.mp4', '.mkv', '.avi', '.m4v')):
+                # Try to find size in the row
+                # (In 'Index of' pages, size is usually in the text node after the link or in the next <td>)
+                row_text = str(link.parent) + str(link.find_next('td')) # Combine nearby HTML to search for text
+                size_gb = get_size_gb(row_text)
+
+                # Check Size Limit
+                if 0.05 < size_gb <= MAX_SIZE_GB:
+                    # Clean up the name
+                    clean_name = urllib.parse.unquote(name).replace(".mp4","").replace(".mkv","")
                     
                     items.append({
-                        "name": name.replace(".mp4","").replace(".mkv",""),
-                        "url": urllib.parse.quote(raw_url, safe=":/"),
-                        "image": f.get('thumb', ""),
-                        "category_id": "1"
+                        "name": clean_name,
+                        "url": full_url,
+                        "image": "", 
+                        "category_id": "1" if category_type == "movies" else "2"
                     })
-            print(f"   Found {len(items)} items via API.")
-            break
+                elif size_gb > MAX_SIZE_GB:
+                    pass # print(f"   [Skipped] {name} (Too large: {size_gb:.2f} GB)")
 
-        # METHOD 2: Standard HTML Scraping (Fallback)
-        try:
-            print("   [HTML Check] Trying standard scraping...")
-            r = requests.get(full_url, headers=HEADERS, timeout=15)
-            
-            # DEBUG: Print what we actually see
-            if r.status_code != 200:
-                print(f"   [ERROR] Status Code: {r.status_code}")
-                continue
-            
-            soup = BeautifulSoup(r.text, 'html.parser')
-            title = soup.title.string if soup.title else "No Title"
-            print(f"   [DEBUG] Page Title: {title}")
-            
-            if "Just a moment" in title or "Cloudflare" in title:
-                print("   [BLOCKED] Cloudflare is blocking the script.")
-                continue
-
-            links = soup.find_all('a')
-            count = 0
-            for link in links:
-                href = link.get('href')
-                if not href: continue
-                
-                if href.lower().endswith(('.mp4', '.mkv', '.avi')):
-                    final_url = urllib.parse.urljoin(full_url + "/", href)
-                    items.append({
-                        "name": link.text.strip(),
-                        "url": final_url,
-                        "image": "",
-                        "category_id": "1"
-                    })
-                    count += 1
-            
-            if count > 0:
-                found_files = True
-                print(f"   Found {count} items via HTML.")
-                
-        except Exception as e:
-            print(f"   [ERROR] {e}")
-
-    return items
-
-# --- RUN ---
-movies = scan_path("Movies", MOVIES_PATHS)
-series = scan_path("Series", SERIES_PATHS)
-
-# Save
-print(f"\nTotal Movies Found: {len(movies)}")
-print(f"Total Series Found: {len(series)}")
-
-with open(OUTPUT_MOVIES, 'w') as f:
-    json.dump(movies, f, indent=4)
-with open(OUTPUT_SERIES, 'w') as f:
-    json.dump(series, f, indent=4)
+    except Exception as e:
