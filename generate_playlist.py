@@ -9,15 +9,16 @@ import os
 import re
 
 # --- CONFIGURATION ---
+# SAVING TO "dis/" FOLDER
 TARGETS = [
-    {"type": "movies", "url": "https://a.111477.xyz/movies/", "output": "movies.json"},
-    {"type": "series", "url": "https://a.111477.xyz/tvs/",    "output": "series.json"},
-    {"type": "episodes", "url": "https://a.111477.xyz/tvs/", "output": "episodes.json"}
+    {"type": "movies", "url": "https://a.111477.xyz/movies/", "output": "dis/movies.json"},
+    {"type": "series", "url": "https://a.111477.xyz/tvs/",    "output": "dis/series.json"},
+    {"type": "episodes", "url": "https://a.111477.xyz/tvs/", "output": "dis/episodes.json"}
 ]
 
 CAT_FILES = {
-    "movies": "movie_categories.json",
-    "series": "series_categories.json"
+    "movies": "dis/movie_categories.json",
+    "series": "dis/series_categories.json"
 }
 
 HEADERS = {
@@ -27,26 +28,20 @@ HEADERS = {
 
 # --- IMDB STEALTH API ---
 def get_imdb_metadata(name, content_type):
-    """
-    Uses IMDb's hidden 'Suggestion API' to get Metadata safely.
-    """
+    """Uses IMDb's hidden 'Suggestion API' to get Metadata safely."""
     if not name: return None
-    
-    # Clean name for search (e.g. "Avatar (2009)" -> "avatar")
     clean = "".join(c.lower() for c in name if c.isalnum())
     if len(clean) < 2: return None
     
-    # IMDb Suggestion API URL
     first_char = clean[0]
     url = f"https://v2.sg.media-imdb.com/suggestion/{first_char}/{urllib.parse.quote(name)}.json"
 
     try:
-        time.sleep(0.2) # Be polite
+        time.sleep(0.2)
         res = requests.get(url, headers=HEADERS, timeout=5)
         if res.status_code == 200:
             data = res.json()
             if "d" in data and len(data["d"]) > 0:
-                # Find the best match
                 for match in data["d"]:
                     is_movie = match.get('q') == 'feature'
                     is_series = match.get('q') in ['TV series', 'TV mini-series']
@@ -55,21 +50,19 @@ def get_imdb_metadata(name, content_type):
                        (content_type == "series" and is_series) or \
                        (match.get('l').lower() == name.lower()): 
                         
-                        # High Res Image Trick (Remove size limit from URL)
                         img = match.get('i', {}).get('imageUrl', '')
                         if img: img = img.replace(".jpg", "UX1000.jpg")
 
                         return {
-                            "tmdb_id": match.get('id'), # Use IMDb ID (tt12345)
+                            "tmdb_id": match.get('id'),
                             "name": match.get('l'),
                             "year": match.get('y'),
                             "stream_icon": img,
-                            "backdrop_path": [img], # Use poster as backdrop fallback
-                            "rating": "7.0", # Default good rating since API doesn't give it
-                            "genre": match.get('s', 'General') # Usually contains "Actor, Movie" etc.
+                            "backdrop_path": [img],
+                            "rating": "7.0",
+                            "genre": match.get('s', 'General')
                         }
-    except Exception:
-        pass
+    except: pass
     return None
 
 # --- HELPERS ---
@@ -86,6 +79,10 @@ def generate_id(name):
         hash_val = (hash_val * 31 + ord(char)) & 0xFFFFFFFF
     return abs(hash_val) % 1000000000
 
+def normalize_string(s):
+    if not s: return ""
+    return "".join(c.lower() for c in s if c.isalnum())
+
 def load_json(filename):
     if os.path.exists(filename):
         try:
@@ -95,33 +92,25 @@ def load_json(filename):
     return []
 
 def save_json(filename, data):
+    # Ensure directory exists
+    folder = os.path.dirname(filename)
+    if folder and not os.path.exists(folder):
+        os.makedirs(folder)
+        
     with open(filename, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4)
 
-# --- DYNAMIC CATEGORY MANAGER ---
 def update_category_file(cat_type, genre_name, existing_cats):
-    """Adds a new genre to categories.json if it doesn't exist."""
-    # Default 'All' category
     if not any(c['category_id'] == "0" for c in existing_cats):
         existing_cats.insert(0, {"category_id": "0", "category_name": "All", "parent_id": 0})
 
-    # Simple normalization
     if not genre_name: genre_name = "General"
-    
-    # Check if exists
     for c in existing_cats:
         if c['category_name'].lower() == genre_name.lower():
             return c['category_id']
     
-    # Create new
     new_id = str(100 + len(existing_cats))
-    existing_cats.append({
-        "category_id": new_id,
-        "category_name": genre_name,
-        "parent_id": 0
-    })
-    
-    # Save immediately
+    existing_cats.append({"category_id": new_id, "category_name": genre_name, "parent_id": 0})
     save_json(CAT_FILES[cat_type], existing_cats)
     return new_id
 
@@ -131,18 +120,16 @@ def stealth_scrape(target_config, episodes_file=None):
     category = target_config["type"]
     output_file = target_config["output"]
     
-    print(f"🚀 STARTING FRESH SCAN: {category.upper()}")
+    print(f"🚀 STARTING SCAN: {category.upper()}")
     
     master_list = load_json(output_file)
     episodes_list = []
     if category == "series" and episodes_file:
         episodes_list = load_json(episodes_file)
     
-    # Load Categories
     cat_file = CAT_FILES["movies" if category == "movies" else "series"]
     categories = load_json(cat_file)
 
-    # Memory Bank
     known_folders = set(item['folder_url'] for item in master_list if 'folder_url' in item)
 
     session = requests.Session()
@@ -158,8 +145,6 @@ def stealth_scrape(target_config, episodes_file=None):
         if not current_url.startswith(base_url): continue
 
         decoded_current = urllib.parse.unquote(current_url)
-        
-        # SKIP KNOWN FOLDERS (Movies only)
         if category == "movies" and decoded_current in known_folders: continue
 
         scanned_history.add(current_url)
@@ -187,22 +172,18 @@ def stealth_scrape(target_config, episodes_file=None):
                 elif href.lower().endswith(('.mp4', '.mkv', '.avi')):
                     folder_files.append({"name": name, "url": full_url})
 
-            # --- PROCESS MOVIES ---
             if category == "movies" and folder_files:
                 valid = [f for f in folder_files if "sample" not in f['name'].lower()]
                 best = valid[0] if valid else folder_files[0]
                 
                 raw_name = clean_filename(best['name'])
-                # ASK IMDB
                 meta = get_imdb_metadata(raw_name, "movies")
                 
                 final_name = meta['name'] if meta else raw_name
                 if meta and meta.get('year'): final_name += f" ({meta['year']})"
                 
-                # CATEGORY LOGIC
-                genre = "General" # IMDb API is weak on genres, usually gives "Actor, Movie"
+                genre = meta['genre'] if meta else "General"
                 cat_id = update_category_file("movies", genre, categories)
-
                 s_id = generate_id(final_name)
 
                 print(f"✨ NEW MOVIE: {final_name}", flush=True)
@@ -222,7 +203,6 @@ def stealth_scrape(target_config, episodes_file=None):
                 known_folders.add(decoded_current)
                 items_since_save += 1
 
-            # --- PROCESS SERIES ---
             elif category == "series" and folder_files:
                 series_raw = urllib.parse.unquote(current_url.rstrip('/').split('/')[-1])
                 if "Season" in series_raw:
@@ -230,15 +210,11 @@ def stealth_scrape(target_config, episodes_file=None):
 
                 s_id = generate_id(series_raw)
                 
-                # Check if series exists
                 existing = next((s for s in master_list if str(s['series_id']) == str(s_id)), None)
-                
                 if not existing:
-                    # ASK IMDB
                     meta = get_imdb_metadata(series_raw, "series")
                     final_name = meta['name'] if meta else series_raw
-                    
-                    cat_id = update_category_file("series", "General", categories)
+                    cat_id = update_category_file("series", meta['genre'] if meta else "General", categories)
                     
                     print(f"✨ NEW SERIES: {final_name}", flush=True)
                     master_list.append({
@@ -252,10 +228,8 @@ def stealth_scrape(target_config, episodes_file=None):
                         "folder_url": current_url
                     })
                 
-                # Add Episodes
                 for f in folder_files:
                      if any(e['url'] == f['url'] for e in episodes_list): continue
-                     
                      ep_name = clean_filename(f['name'])
                      season_num = "1"
                      if "Season" in current_url:
