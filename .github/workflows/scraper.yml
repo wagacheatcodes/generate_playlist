@@ -1,6 +1,5 @@
 name: Scraper
 
-# 1. PERMISSIONS (CRITICAL)
 permissions:
   contents: write
 
@@ -10,7 +9,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  # JOB 1: MOVIES
   scrape_movies:
     runs-on: ubuntu-latest
     timeout-minutes: 350
@@ -25,9 +23,8 @@ jobs:
         if: always()
         with:
           name: movies-data
-          path: movies.json
+          path: dis/movies.json
 
-  # JOB 2: SERIES
   scrape_series:
     runs-on: ubuntu-latest
     timeout-minutes: 350
@@ -43,10 +40,9 @@ jobs:
         with:
           name: series-data
           path: |
-            series.json
-            episodes.json
+            dis/series.json
+            dis/episodes.json
 
-  # JOB 3: FORCE PUSH (THE FIX)
   force_push:
     needs: [scrape_movies, scrape_series]
     if: always()
@@ -59,17 +55,21 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: movies-data
-          path: .
+          path: dis
 
       - uses: actions/download-artifact@v4
         with:
           name: series-data
-          path: .
+          path: dis
 
       - name: Nuclear Push
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
-          git add movies.json series.json episodes.json
-          git commit -m "Fresh Playlist" || echo "Nothing to commit"
+          
+          # Ensure directory exists and add all files inside
+          mkdir -p dis
+          git add dis/*
+          
+          git commit -m "Weekly Playlist Update" || echo "Nothing to commit"
           git push -f origin main
