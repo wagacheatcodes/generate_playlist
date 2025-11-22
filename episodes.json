@@ -1,6 +1,114 @@
 [
   {
-    "tmdb_id": 272937,
+    "series_id": 854867538,
+    "tmdb_id": 242845,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03"
+    ]
+  },
+  {
+    "series_id": 966835533,
+    "tmdb_id": 242189,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06"
+    ]
+  },
+  {
+    "series_id": 610250510,
+    "tmdb_id": 201076,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06",
+      "S01E07"
+    ]
+  },
+  {
+    "series_id": 769832131,
+    "tmdb_id": 90814,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06",
+      "S01E07",
+      "S01E08",
+      "S01E09",
+      "S01E10"
+    ]
+  },
+  {
+    "series_id": 976369070,
+    "tmdb_id": 18048,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E08",
+      "S01E09",
+      "S01E10"
+    ]
+  },
+  {
+    "series_id": 339961685,
+    "tmdb_id": 11145,
+    "season": "Season 22",
+    "episodes": [
+      "S22E01"
+    ]
+  },
+  {
+    "series_id": 336477305,
+    "tmdb_id": null,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06",
+      "S01E07",
+      "S01E08",
+      "S01E11"
+    ]
+  },
+  {
+    "series_id": 242394608,
+    "tmdb_id": 78154,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06",
+      "S01E07",
+      "S01E08"
+    ]
+  },
+  {
+    "series_id": 171897366,
+    "tmdb_id": 61465,
     "season": "Season 01",
     "episodes": [
       "S01E01",
@@ -14,35 +122,12 @@
       "S01E09",
       "S01E10",
       "S01E11",
-      "S01E12",
-      "S01E13",
-      "S01E14",
-      "S01E15",
-      "S01E16",
-      "S01E17",
-      "S01E18",
-      "S01E19",
-      "S01E20",
-      "S01E21",
-      "S01E22",
-      "S01E23",
-      "S01E24",
-      "S01E25",
-      "S01E26",
-      "S01E27",
-      "S01E28",
-      "S01E29",
-      "S01E30",
-      "S01E31",
-      "S01E32",
-      "S01E33",
-      "S01E34",
-      "S01E35",
-      "S01E36"
+      "S01E12"
     ]
   },
   {
-    "tmdb_id": 82094,
+    "series_id": 15497566,
+    "tmdb_id": 81924,
     "season": "Season 01",
     "episodes": [
       "S01E01",
@@ -58,6 +143,69 @@
       "S01E11",
       "S01E12",
       "S01E13"
+    ]
+  },
+  {
+    "series_id": 9513377,
+    "tmdb_id": 238486,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E05"
+    ]
+  },
+  {
+    "series_id": 198378586,
+    "tmdb_id": 67157,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E05",
+      "S01E06",
+      "S01E07",
+      "S01E08",
+      "S01E09",
+      "S01E10",
+      "S01E11",
+      "S01E13",
+      "S01E14",
+      "S01E15",
+      "S01E16",
+      "S01E17",
+      "S01E18",
+      "S01E19",
+      "S01E20"
+    ]
+  },
+  {
+    "series_id": 330008479,
+    "tmdb_id": 214079,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06",
+      "S01E07"
+    ]
+  },
+  {
+    "series_id": 948119018,
+    "tmdb_id": 233325,
+    "season": "Season 01",
+    "episodes": [
+      "S01E01",
+      "S01E02",
+      "S01E03",
+      "S01E04",
+      "S01E05",
+      "S01E06"
     ]
   }
 ]
