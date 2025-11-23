@@ -4,28 +4,24 @@ on:
   # Schedule: At 00:00 on Sunday (Once a week)
   schedule:
     - cron: '0 0 * * 0'
-  workflow_dispatch:      # Allows you to click "Run" manually whenever you want
+  workflow_dispatch:      
 
 jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write     # Allows it to save the JSON files
+      contents: write     
 
     steps:
-    # 1. Checkout THIS Repo (The Data) into a folder named 'dist'
-    # This matches the structure your scripts expect.
+    # 1. Checkout THIS Repo 
     - name: Checkout Public Data
       uses: actions/checkout@v3
       with:
         path: dist
-
-    # 2. Checkout the PRIVATE Scripts (The Logic)
-    # We use the Token to access your private Alpha repo
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
-        repository: YOUR_USERNAME/Alpha  # <--- CHANGE THIS TO YOUR USERNAME
+        repository: wagacheatcodes/Alpha  
         token: ${{ secrets.API_TOKEN_GITHUB }}
         path: scripts_repo
 
@@ -34,16 +30,14 @@ jobs:
       with:
         node-version: '18'
 
-    # 3. Setup the Workspace
-    # Move scripts to the root so they sit next to 'dist'
+    # 3. Setup
     - name: Install & Setup
       run: |
         cp -r scripts_repo/scripts .
         cp scripts_repo/package.json .
         npm install
 
-    # 4. Run the Scripts (Time Limit: 6 Hours)
-    # Since we are Public now, we have unlimited minutes, but still a 6h timeout per job.
+    # 4. Run the Scripts 
     - name: Run Generators
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
