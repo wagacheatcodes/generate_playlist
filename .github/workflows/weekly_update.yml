@@ -5,24 +5,25 @@ on:
   schedule:
     - cron: '0 0 * * 0'
   workflow_dispatch:      
-
 jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write     
+      contents: write    
 
     steps:
-    # 1. Checkout THIS Repo 
+    # 1. Checkout 
     - name: Checkout Public Data
       uses: actions/checkout@v3
       with:
         path: dist
+
+    # 2. Checkout 
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
-        repository: wagacheatcodes/Alpha  
-        token: ${{Playlist Updater}}
+        repository: wagacheatscodes/Alpha  # <--- CHANGE THIS TO YOUR USERNAME
+        token: ${{ secrets.API_TOKEN_GITHUB }}
         path: scripts_repo
 
     - name: Setup Node.js
@@ -30,14 +31,14 @@ jobs:
       with:
         node-version: '18'
 
-    # 3. Setup
+    # 3. Setup 
     - name: Install & Setup
       run: |
         cp -r scripts_repo/scripts .
         cp scripts_repo/package.json .
         npm install
 
-    # 4. Run the Scripts 
+    # 4. Run
     - name: Run Generators
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
