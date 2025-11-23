@@ -1,0 +1,72 @@
+name: Weekly Playlist Update
+
+on:
+  # Schedule: At 00:00 on Sunday (Once a week)
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:      # Allows you to click "Run" manually whenever you want
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # Allows it to save the JSON files
+
+    steps:
+    # 1. Checkout THIS Repo (The Data) into a folder named 'dist'
+    # This matches the structure your scripts expect.
+    - name: Checkout Public Data
+      uses: actions/checkout@v3
+      with:
+        path: dist
+
+    # 2. Checkout the PRIVATE Scripts (The Logic)
+    # We use the Token to access your private Alpha repo
+    - name: Checkout Private Scripts
+      uses: actions/checkout@v3
+      with:
+        repository: YOUR_USERNAME/Alpha  # <--- CHANGE THIS TO YOUR USERNAME
+        token: ${{ secrets.API_TOKEN_GITHUB }}
+        path: scripts_repo
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+
+    # 3. Setup the Workspace
+    # Move scripts to the root so they sit next to 'dist'
+    - name: Install & Setup
+      run: |
+        cp -r scripts_repo/scripts .
+        cp scripts_repo/package.json .
+        npm install
+
+    # 4. Run the Scripts (Time Limit: 6 Hours)
+    # Since we are Public now, we have unlimited minutes, but still a 6h timeout per job.
+    - name: Run Generators
+      env:
+        TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      run: |
+        node scripts/generate_series_from_tvs.js
+        node scripts/generate_streams_from_movies.js
+        node scripts/enrich_metadata.js
+        node scripts/generate_episodes.js
+
+    # 5. Save Changes
+    - name: Commit and Push
+      working-directory: ./dist
+      run: |
+        git config user.name "Playlist Bot"
+        git config user.email "bot@example.com"
+        
+        # Add all changes
+        git add .
+        
+        # Only commit if there are changes
+        if [[ -n $(git status -s) ]]; then
+          git commit -m "Weekly content update"
+          git push
+        else
+          echo "No changes found. Skipping push."
+        fi
