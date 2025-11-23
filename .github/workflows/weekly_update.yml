@@ -1,19 +1,28 @@
-name: Debug X-Ray
+name: Weekly Playlist Update
 
 on:
-  workflow_dispatch:      # Allows you to click "Run" manually
+  # Automatic: Runs at 00:00 every Sunday
+  schedule:
+    - cron: '0 0 * * 0'
+  # Manual: Allows you to click "Run workflow" anytime
+  workflow_dispatch:
 
 jobs:
-  debug_job:
+  update:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # Permission to save files back to the repo
 
     steps:
-    # 1. Standard Setup (Keep this!)
+    # 1. Checkout THIS Public Repo (Where the data lives)
+    # We put it in a folder named 'dist' so the scripts find it easily
     - name: Checkout Public Data
       uses: actions/checkout@v3
       with:
         path: dist
 
+    # 2. Checkout the PRIVATE Scripts (Where the code lives)
+    # Uses your Secret Token to access 'Alpha'
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
@@ -26,12 +35,48 @@ jobs:
       with:
         node-version: '18'
 
+    # 3. Setup Workspace
+    # Moves the scripts from the subfolder to the root
     - name: Install & Setup
       run: |
         cp -r scripts_repo/scripts .
         cp scripts_repo/package.json .
         npm install
 
-    # 2. THE DEBUG STEP (This replaces the big script runner)
-    - name: Run X-Ray Debugger
-      run: node scripts/debug_xray.js
+    # 4. Run the Generators
+    # We disabled metadata temporarily to speed up the episode fix. 
+    # Uncomment 'enrich_metadata.js' later if you want posters/plots.
+    - name: Run Generators
+      env:
+        TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      run: |
+        echo "--- 1. Updating Series List ---"
+        node scripts/generate_series_from_tvs.js
+        
+        echo "--- 2. Updating Movie List ---"
+        node scripts/generate_streams_from_movies.js
+        
+        # echo "--- 3. Fetching Metadata (Disabled for speed) ---"
+        # node scripts/enrich_metadata.js
+        
+        echo "--- 4. Scanning Episodes ---"
+        node scripts/generate_episodes.js
+
+    # 5. Save & Push
+    # Goes into the 'dist' folder and saves the results to the Public Repo
+    - name: Commit and Push
+      working-directory: ./dist
+      run: |
+        git config user.name "Playlist Bot"
+        git config user.email "bot@example.com"
+        
+        # Add all new files
+        git add .
+        
+        # Check if anything actually changed before pushing
+        if [[ -n $(git status -s) ]]; then
+          git commit -m "Content Update: $(date)"
+          git push
+        else
+          echo "No changes found. Skipping push."
+        fi
