@@ -22,7 +22,7 @@ jobs:
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
-        repository: wagacheatscodes/Alpha  # <--- CHANGE THIS TO YOUR USERNAME
+        repository: wagacheatcodes/Alpha 
         token: ${{ secrets.API_TOKEN_GITHUB }}
         path: scripts_repo
 
