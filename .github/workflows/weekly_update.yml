@@ -1,28 +1,24 @@
-name: Weekly Playlist Update
+name: Playlist Update (Fast Mode)
 
 on:
-  # Automatic: Runs at 00:00 every Sunday
+  # Run every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
   schedule:
-    - cron: '0 0 * * 0'
-  # Manual: Allows you to click "Run workflow" anytime
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write     # Permission to save files back to the repo
+      contents: write
+      actions: write
 
     steps:
-    # 1. Checkout THIS Public Repo (Where the data lives)
-    # We put it in a folder named 'dist' so the scripts find it easily
     - name: Checkout Public Data
       uses: actions/checkout@v3
       with:
         path: dist
 
-    # 2. Checkout the PRIVATE Scripts (Where the code lives)
-    # Uses your Secret Token to access 'Alpha'
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
@@ -35,17 +31,12 @@ jobs:
       with:
         node-version: '18'
 
-    # 3. Setup Workspace
-    # Moves the scripts from the subfolder to the root
     - name: Install & Setup
       run: |
         cp -r scripts_repo/scripts .
         cp scripts_repo/package.json .
         npm install
 
-    # 4. Run the Generators
-    # We disabled metadata temporarily to speed up the episode fix. 
-    # Uncomment 'enrich_metadata.js' later if you want posters/plots.
     - name: Run Generators
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
@@ -56,27 +47,38 @@ jobs:
         echo "--- 2. Updating Movie List ---"
         node scripts/generate_streams_from_movies.js
         
-        # echo "--- 3. Fetching Metadata (Disabled for speed) ---"
-        # node scripts/enrich_metadata.js
+        echo "--- 3. Fetching Metadata ---"
+        node scripts/enrich_metadata.js
         
         echo "--- 4. Scanning Episodes ---"
+        # This script now has the 5.5 hour limit and auto-chaining flag
         node scripts/generate_episodes.js
 
-    # 5. Save & Push
-    # Goes into the 'dist' folder and saves the results to the Public Repo
     - name: Commit and Push
       working-directory: ./dist
       run: |
         git config user.name "Playlist Bot"
         git config user.email "bot@example.com"
-        
-        # Add all new files
         git add .
-        
-        # Check if anything actually changed before pushing
         if [[ -n $(git status -s) ]]; then
-          git commit -m "Content Update: $(date)"
+          git commit -m "Progress Update: $(date)"
           git push
-        else
-          echo "No changes found. Skipping push."
         fi
+
+    # Auto-trigger immediately if the script requested it (Chain runs back-to-back)
+    - name: Check for Continuation
+      id: check_continue
+      run: |
+        if [ -f "CONTINUE_SCAN_NEEDED" ]; then
+          echo "continue=true" >> $GITHUB_OUTPUT
+        else
+          echo "continue=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Trigger Next Run
+      if: steps.check_continue.outputs.continue == 'true'
+      run: |
+        echo "🚀 Time limit reached. Triggering immediate follow-up run..."
+        gh workflow run weekly_update.yml
+      env:
+        GH_TOKEN: ${{ secrets.API_TOKEN_GITHUB }}
