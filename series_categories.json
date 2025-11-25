@@ -1,7 +1,87 @@
 [
   {
+    "category_id": "10759",
+    "category_name": "Action & Adventure",
+    "parent_id": 0
+  },
+  {
+    "category_id": "16",
+    "category_name": "Animation",
+    "parent_id": 0
+  },
+  {
+    "category_id": "35",
+    "category_name": "Comedy",
+    "parent_id": 0
+  },
+  {
+    "category_id": "80",
+    "category_name": "Crime",
+    "parent_id": 0
+  },
+  {
+    "category_id": "99",
+    "category_name": "Documentary",
+    "parent_id": 0
+  },
+  {
+    "category_id": "18",
+    "category_name": "Drama",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10751",
+    "category_name": "Family",
+    "parent_id": 0
+  },
+  {
     "category_id": "999",
     "category_name": "General",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10762",
+    "category_name": "Kids",
+    "parent_id": 0
+  },
+  {
+    "category_id": "9648",
+    "category_name": "Mystery",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10763",
+    "category_name": "News",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10764",
+    "category_name": "Reality",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10765",
+    "category_name": "Sci-Fi & Fantasy",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10766",
+    "category_name": "Soap",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10767",
+    "category_name": "Talk",
+    "parent_id": 0
+  },
+  {
+    "category_id": "10768",
+    "category_name": "War & Politics",
+    "parent_id": 0
+  },
+  {
+    "category_id": "37",
+    "category_name": "Western",
     "parent_id": 0
   }
 ]
