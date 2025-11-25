@@ -1,7 +1,7 @@
 name: Playlist Update (Fast Mode)
 
 on:
-  # Run every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+  # Run every 6 hours
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
@@ -51,7 +51,6 @@ jobs:
         node scripts/enrich_metadata.js
         
         echo "--- 4. Scanning Episodes ---"
-        # This script now has the 5.5 hour limit and auto-chaining flag
         node scripts/generate_episodes.js
 
     - name: Commit and Push
@@ -65,7 +64,7 @@ jobs:
           git push
         fi
 
-    # Auto-trigger immediately if the script requested it (Chain runs back-to-back)
+    # CHECK FOR CONTINUATION FLAG
     - name: Check for Continuation
       id: check_continue
       run: |
@@ -75,10 +74,11 @@ jobs:
           echo "continue=false" >> $GITHUB_OUTPUT
         fi
 
+    # FIXED: Added --repo flag so it finds the repository correctly
     - name: Trigger Next Run
       if: steps.check_continue.outputs.continue == 'true'
       run: |
         echo "🚀 Time limit reached. Triggering immediate follow-up run..."
-        gh workflow run weekly_update.yml
+        gh workflow run weekly_update.yml --repo ${{ github.repository }}
       env:
         GH_TOKEN: ${{ secrets.API_TOKEN_GITHUB }}
