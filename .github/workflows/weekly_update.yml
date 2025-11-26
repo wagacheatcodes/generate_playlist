@@ -1,24 +1,27 @@
 name: Playlist Update (Fast Mode)
 
 on:
-  # Run every 6 hours
+  # Schedule: Every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
   schedule:
     - cron: '0 */6 * * *'
+  # Manual: Allows you to click "Run workflow" anytime
   workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      actions: write
+      contents: write     # Permission to save files
+      actions: write      # Permission to trigger next run
 
     steps:
+    # 1. Checkout Public Data (Where the JSONs live)
     - name: Checkout Public Data
       uses: actions/checkout@v3
       with:
         path: dist
 
+    # 2. Checkout Private Scripts (Where the logic lives)
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
@@ -31,40 +34,54 @@ jobs:
       with:
         node-version: '18'
 
+    # 3. Setup Workspace
+    # Moves scripts to root folder so they can find 'dist' easily
     - name: Install & Setup
       run: |
         cp -r scripts_repo/scripts .
         cp scripts_repo/package.json .
         npm install
 
+    # 4. Run Generators
     - name: Run Generators
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
       run: |
-        echo "--- 1. Updating Series List ---"
-        node scripts/generate_series_from_tvs.js
+        echo "--- 1. Updating Lists (Running Simultaneously) ---"
+        # Run Series and Movies scripts in parallel to save time
+        node scripts/generate_series_from_tvs.js &
+        node scripts/generate_streams_from_movies.js &
         
-        echo "--- 2. Updating Movie List ---"
-        node scripts/generate_streams_from_movies.js
+        # Wait for both to finish
+        wait
         
-        echo "--- 3. Fetching Metadata ---"
+        echo "--- 2. Fetching Metadata ---"
         node scripts/enrich_metadata.js
         
-        echo "--- 4. Scanning Episodes ---"
+        echo "--- 3. Scanning Episodes ---"
+        # This script has the 5.5h limit and auto-continue flag
         node scripts/generate_episodes.js
 
+    # 5. Save & Push Changes
     - name: Commit and Push
       working-directory: ./dist
       run: |
         git config user.name "Playlist Bot"
         git config user.email "bot@example.com"
+        
+        # Add all changes
         git add .
+        
+        # Commit only if there are changes
         if [[ -n $(git status -s) ]]; then
           git commit -m "Progress Update: $(date)"
           git push
+        else
+          echo "No changes found. Skipping push."
         fi
 
-    # CHECK FOR CONTINUATION FLAG
+    # 6. Check for Continuation (Auto-Chain)
+    # If generate_episodes.js created the flag file, we restart the workflow immediately
     - name: Check for Continuation
       id: check_continue
       run: |
@@ -74,7 +91,6 @@ jobs:
           echo "continue=false" >> $GITHUB_OUTPUT
         fi
 
-    # FIXED: Added --repo flag so it finds the repository correctly
     - name: Trigger Next Run
       if: steps.check_continue.outputs.continue == 'true'
       run: |
