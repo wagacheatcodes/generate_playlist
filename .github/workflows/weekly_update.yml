@@ -1,7 +1,7 @@
 name: Playlist Update (Fast Mode)
 
 on:
-  # Schedule: Every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+  # Schedule: Run every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
   schedule:
     - cron: '0 */6 * * *'
   # Manual: Allows you to click "Run workflow" anytime
@@ -11,17 +11,19 @@ jobs:
   update:
     runs-on: ubuntu-latest
     permissions:
-      contents: write     # Permission to save files
-      actions: write      # Permission to trigger next run
+      contents: write     # Permission to save files back to the repo
+      actions: write      # Permission to trigger the next run in the chain
 
     steps:
     # 1. Checkout Public Data (Where the JSONs live)
+    # We put it in a folder named 'dist' so the scripts find it easily
     - name: Checkout Public Data
       uses: actions/checkout@v3
       with:
         path: dist
 
     # 2. Checkout Private Scripts (Where the logic lives)
+    # Uses your Secret Token to access 'Alpha'
     - name: Checkout Private Scripts
       uses: actions/checkout@v3
       with:
@@ -42,24 +44,25 @@ jobs:
         cp scripts_repo/package.json .
         npm install
 
-    # 4. Run Generators
+    # 4. Run the Generators
     - name: Run Generators
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
       run: |
         echo "--- 1. Updating Lists (Running Simultaneously) ---"
-        # Run Series and Movies scripts in parallel to save time
+        # Run Series and Movies scripts in background (&) to save time
         node scripts/generate_series_from_tvs.js &
         node scripts/generate_streams_from_movies.js &
         
-        # Wait for both to finish
+        # Wait for both list updates to finish before moving on
         wait
         
         echo "--- 2. Fetching Metadata ---"
+        # This adds Posters and Plots
         node scripts/enrich_metadata.js
         
         echo "--- 3. Scanning Episodes ---"
-        # This script has the 5.5h limit and auto-continue flag
+        # This script has the 5.0h limit and auto-continue flag
         node scripts/generate_episodes.js
 
     # 5. Save & Push Changes
@@ -91,6 +94,7 @@ jobs:
           echo "continue=false" >> $GITHUB_OUTPUT
         fi
 
+    # 7. Trigger Next Run (If needed)
     - name: Trigger Next Run
       if: steps.check_continue.outputs.continue == 'true'
       run: |
