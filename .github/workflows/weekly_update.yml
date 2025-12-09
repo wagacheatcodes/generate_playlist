@@ -2,7 +2,7 @@ name: Heavy Playlist Update (Parallel Start)
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Runs every 6 hours
+    - cron: '0 */6 * * *' # Every 6 hours
   workflow_dispatch:
 
 jobs:
@@ -54,14 +54,21 @@ jobs:
         # This will run for 5 hours then trigger a save/restart
         node scripts/generate_episodes.js
 
+    # FIXED: PULL BEFORE PUSH
     - name: Commit and Push
       working-directory: ./dist
       run: |
         git config user.name "Playlist Bot"
         git config user.email "bot@example.com"
+        
         git add .
+        
         if [[ -n $(git status -s) ]]; then
           git commit -m "Progress Update: $(date)"
+          
+          # ⚠️ THE FIX: Download the scanner's changes first!
+          git pull --rebase origin main
+          
           git push
         fi
 
