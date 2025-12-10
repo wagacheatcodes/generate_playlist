@@ -2,7 +2,7 @@ name: Heavy Playlist Update (Parallel Start)
 
 on:
   schedule:
-    - cron: '0 */6 * * *' # Every 6 hours
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 jobs:
@@ -42,7 +42,7 @@ jobs:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
       run: |
         echo "--- 1. Updating Lists (Running Simultaneously) ---"
-        # The '&' runs them in background. 'wait' pauses until both are done.
+        # Run Series and Movies scripts in parallel
         node scripts/generate_series_from_tvs.js &
         node scripts/generate_streams_from_movies.js &
         wait
@@ -51,7 +51,6 @@ jobs:
         node scripts/enrich_metadata.js
         
         echo "--- 3. Scanning Episodes (The Long Haul) ---"
-        # This will run for 5 hours then trigger a save/restart
         node scripts/generate_episodes.js
 
     # FIXED: PULL BEFORE PUSH
@@ -66,7 +65,7 @@ jobs:
         if [[ -n $(git status -s) ]]; then
           git commit -m "Progress Update: $(date)"
           
-          # ⚠️ THE FIX: Download the scanner's changes first!
+          # ⚠️ Download changes from the scanner first!
           git pull --rebase origin main
           
           git push
