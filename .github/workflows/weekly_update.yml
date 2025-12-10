@@ -1,8 +1,8 @@
-name: Heavy Playlist Update (Parallel Start)
+name: Fast Playlist Update (Hybrid Mode)
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    - cron: '0 */6 * * *' # Every 6 hours
   workflow_dispatch:
 
 jobs:
@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: write
 
     steps:
     - name: Checkout Public Data
@@ -36,55 +35,26 @@ jobs:
         cp scripts_repo/package.json .
         npm install
 
-    # PARALLEL EXECUTION BLOCK
+    # ONLY UPDATE LISTS & METADATA (NO EPISODE SCANNING)
     - name: Run Generators
       env:
         TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
       run: |
         echo "--- 1. Updating Lists (Running Simultaneously) ---"
-        # Run Series and Movies scripts in parallel
         node scripts/generate_series_from_tvs.js &
         node scripts/generate_streams_from_movies.js &
         wait
         
         echo "--- 2. Fetching Metadata ---"
         node scripts/enrich_metadata.js
-        
-        echo "--- 3. Scanning Episodes (The Long Haul) ---"
-        node scripts/generate_episodes.js
 
-    # FIXED: PULL BEFORE PUSH
     - name: Commit and Push
       working-directory: ./dist
       run: |
         git config user.name "Playlist Bot"
         git config user.email "bot@example.com"
-        
         git add .
-        
         if [[ -n $(git status -s) ]]; then
-          git commit -m "Progress Update: $(date)"
-          
-          # ⚠️ Download changes from the scanner first!
-          git pull --rebase origin main
-          
+          git commit -m "Content Update: $(date)"
           git push
         fi
-
-    # AUTO-RESTART LOGIC
-    - name: Check for Continuation
-      id: check_continue
-      run: |
-        if [ -f "CONTINUE_SCAN_NEEDED" ]; then
-          echo "continue=true" >> $GITHUB_OUTPUT
-        else
-          echo "continue=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Trigger Next Run
-      if: steps.check_continue.outputs.continue == 'true'
-      run: |
-        echo "🚀 Time limit reached. Triggering immediate follow-up run..."
-        gh workflow run weekly_update.yml --repo ${{ github.repository }}
-      env:
-        GH_TOKEN: ${{ secrets.API_TOKEN_GITHUB }}
